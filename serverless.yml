@@ -1,0 +1,133 @@
+app: people-app
+service: people-service
+
+plugins:
+  - serverless-offline
+
+provider:
+  name: aws
+  memorySize: 512 
+  runtime: nodejs20.x    
+  timeout: 5    
+  profile: default
+  region:  us-west-2
+  stackName: stack-people
+  environment:
+    DATABASE_NAME: people
+    DATABASE_USER: root
+    DATABASE_PASSWORD: sdfsdSDF988
+    DATABASE_HOST: localhost
+
+    REDIS_PORT: 6379
+    REDIS_HOST: localhost
+    REDIS_USER: default
+    REDIS_NAME_KEY: key:PersonPeople
+    REDIS_EXPIRATION_KEY_SECONDS: 1800 #30 minutes
+
+    HTTP_BASE_URL_ADVICE: https://dragonball-api.com
+    HTTP_BASE_URL_SWAPI: https://swapi.info/api
+    HTTP_TIMEOUT: 5000
+    HTTP_MAX_REQUEST: 1
+    HTTP_REQUEST_PER_MILIS: 2000   
+
+  vpc:
+    securityGroupIds:
+      - sg-0ef650b0108137941
+    subnetIds:
+      - subnet-096d4474fdce4ef37
+      - subnet-0e637c4ecdea04475
+      - subnet-012110e58055331a0    
+
+
+package:
+  patterns:
+    - '!**'  
+    - 'dist/**'
+    - 'package.json'
+    - 'package-lock.json'
+    - 'node_modules/**'
+
+functions:
+  main:
+    handler: dist/main-lambda.handler
+    name: fn-people
+    timeout: 10  
+    memorySize: 128
+    events:
+      - httpApi:
+          path: /people
+          method: get
+      - httpApi:
+          path: /people/history
+          method: get
+      - httpApi:
+          path: /people/appointment
+          method: post                 
+
+
+resources:
+  Resources:
+    MySQLSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Security group for RDS MySQL instance
+        VpcId: vpc-0f34f4b81d9c3ba90
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 3306
+            ToPort: 3306
+            CidrIp: 0.0.0.0/0
+
+    MyRDSDBSubnetGroup:
+      Type: AWS::RDS::DBSubnetGroup
+      Properties:
+        DBSubnetGroupDescription: Subnets for RDS
+        SubnetIds:     
+          - subnet-096d4474fdce4ef37
+          - subnet-0e637c4ecdea04475
+          - subnet-012110e58055331a0    
+          - subnet-09de7cb675799a695
+          - subnet-04ee8c4a58cadb5be
+        DBSubnetGroupName: my-rds-subnet-group
+
+    ValkeySecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: Security group for Valkey
+        VpcId: vpc-0f34f4b81d9c3ba90
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 6379
+            ToPort: 6379
+            CidrIp: 0.0.0.0/0
+
+    RDSDatabase:
+      Type: AWS::RDS::DBInstance
+      Properties:
+        Engine : mysql
+        DBInstanceIdentifier: RDSMYSQLServicePeople
+        DBName: ${env:DATABASE_NAME}
+        MasterUsername: ${env:DATABASE_USER}
+        MasterUserPassword: ${env:DATABASE_PASSWORD}
+        DBInstanceClass : db.t4g.micro
+        AllocatedStorage: '5'
+        PubliclyAccessible: true
+        DBSubnetGroupName: !Ref MyRDSDBSubnetGroup
+        VPCSecurityGroups:
+          - !GetAtt MySQLSecurityGroup.GroupId
+      DeletionPolicy: Snapshot
+
+    ElastiCacheServerless:
+      Type: AWS::ElastiCache::ServerlessCache
+      Properties:
+        Engine: valkey
+        ServerlessCacheName: CacheServicePeople
+        DailySnapshotTime: "03:00"
+        Description: Serverless cache Valkey
+        MajorEngineVersion: "7"
+        SecurityGroupIds:
+          - !GetAtt ValkeySecurityGroup.GroupId
+        SnapshotRetentionLimit: 7
+        SubnetIds:
+          - subnet-012110e58055331a0
+          - subnet-0e637c4ecdea04475
